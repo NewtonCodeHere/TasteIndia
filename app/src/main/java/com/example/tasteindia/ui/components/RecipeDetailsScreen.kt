@@ -1,5 +1,7 @@
 package com.example.tasteindia.ui.components
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +15,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -21,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -30,6 +36,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,6 +53,7 @@ fun RecipeDetailsScreen(
 ) {
     val detailsState by viewModel.recipeDetailsState.collectAsStateWithLifecycle()
     val selectedId by viewModel.selectedRecipeId.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -136,6 +144,58 @@ fun RecipeDetailsScreen(
                                             style = MaterialTheme.typography.bodyMedium,
                                             color = MaterialTheme.colorScheme.secondary
                                         )
+                                    }
+                                }
+                            }
+                        }
+
+                        // External Links: View Original Recipe & Watch Cooking Video
+                        item {
+                            val hasSource = detail.strSource.isNotBlank() &&
+                                    (detail.strSource.startsWith("http://") || detail.strSource.startsWith("https://"))
+                            val hasYoutube = detail.strYoutube.isNotBlank() &&
+                                    (detail.strYoutube.startsWith("http://") || detail.strYoutube.startsWith("https://"))
+
+                            if (hasSource || hasYoutube) {
+                                Column(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if (hasSource) {
+                                        Button(
+                                            onClick = {
+                                                try {
+                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(detail.strSource))
+                                                    context.startActivity(intent)
+                                                } catch (_: Exception) {
+                                                    // Handle or ignore invalid intent safely
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Default.Public, contentDescription = null)
+                                            Spacer(modifier = Modifier.padding(4.dp))
+                                            Text("View Original Recipe")
+                                        }
+                                    }
+
+                                    if (hasYoutube) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                try {
+                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(detail.strYoutube))
+                                                    context.startActivity(intent)
+                                                } catch (_: Exception) {
+                                                    // Handle or ignore invalid intent safely
+                                                }
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = null)
+                                            Spacer(modifier = Modifier.padding(4.dp))
+                                            Text("Watch Cooking Video")
+                                        }
                                     }
                                 }
                             }

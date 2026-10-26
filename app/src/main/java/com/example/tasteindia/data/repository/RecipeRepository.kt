@@ -206,6 +206,8 @@ class RecipeRepository(
                         strCategory = dto.strCategory ?: "General",
                         strArea = dto.strArea ?: "Indian",
                         strInstructions = dto.strInstructions ?: "No instructions provided.",
+                        strSource = dto.strSource?.trim() ?: "",
+                        strYoutube = dto.strYoutube?.trim() ?: "",
                         ingredients = dto.getIngredientsWithMeasurements()
                     )
                     Result.success(detail)

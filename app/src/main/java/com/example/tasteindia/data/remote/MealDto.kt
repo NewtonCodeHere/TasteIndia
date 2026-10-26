@@ -23,6 +23,10 @@ data class MealDto(
     val strCategory: String? = null,
     @Json(name = "strInstructions")
     val strInstructions: String? = null,
+    @Json(name = "strSource")
+    val strSource: String? = null,
+    @Json(name = "strYoutube")
+    val strYoutube: String? = null,
     // Ingredients
     @Json(name = "strIngredient1") val strIngredient1: String? = null,
     @Json(name = "strIngredient2") val strIngredient2: String? = null,

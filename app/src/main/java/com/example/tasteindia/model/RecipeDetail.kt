@@ -7,5 +7,7 @@ data class RecipeDetail(
     val strCategory: String,
     val strArea: String,
     val strInstructions: String,
+    val strSource: String,
+    val strYoutube: String,
     val ingredients: List<Pair<String, String>>
 )
