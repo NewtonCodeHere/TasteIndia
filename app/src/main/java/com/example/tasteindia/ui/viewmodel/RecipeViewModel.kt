@@ -1,8 +1,10 @@
 package com.example.tasteindia.ui.viewmodel
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tasteindia.data.remote.NetworkModule
+import com.example.tasteindia.data.repository.FavoriteRepository
 import com.example.tasteindia.data.repository.RecipeRepository
 import com.example.tasteindia.model.Recipe
 import com.example.tasteindia.model.RecipeDetail
@@ -25,6 +27,9 @@ enum class SortOrder {
 class RecipeViewModel(
     private val repository: RecipeRepository = RecipeRepository(NetworkModule.apiService)
 ) : ViewModel() {
+
+    private var appContext: Context? = null
+    private val memoryFavorites = mutableSetOf<String>()
 
     private val _uiState = MutableStateFlow<RecipeUiState>(RecipeUiState.Loading)
     val uiState: StateFlow<RecipeUiState> = _uiState.asStateFlow()
@@ -60,6 +65,18 @@ class RecipeViewModel(
         loadRecipes()
     }
 
+    fun initContext(context: Context) {
+        if (appContext == null) {
+            appContext = context.applicationContext
+            // Reload recipes with context favorites if already loaded
+            if (baseRecipes.value.isNotEmpty()) {
+                updateVisibleRecipes()
+            } else {
+                loadRecipes()
+            }
+        }
+    }
+
     private fun loadMetadata() {
         viewModelScope.launch {
             repository.getCategories().onSuccess { _categories.value = it }
@@ -67,18 +84,31 @@ class RecipeViewModel(
         }
     }
 
+    private fun getStoredFavoriteIds(): Set<String> {
+        val ctx = appContext
+        return if (ctx != null) {
+            FavoriteRepository.getFavoriteIds(ctx)
+        } else {
+            memoryFavorites
+        }
+    }
+
     fun loadRecipes() {
         viewModelScope.launch {
             _uiState.value = RecipeUiState.Loading
             val result = repository.getIndianRecipes()
+            val favoriteIds = getStoredFavoriteIds()
             _uiState.value = result.fold(
                 onSuccess = { recipes ->
-                    baseRecipes.value = recipes
+                    val recipesWithFavorites = recipes.map { recipe ->
+                        recipe.copy(isFavorite = favoriteIds.contains(recipe.idMeal))
+                    }
+                    baseRecipes.value = recipesWithFavorites
                     updateVisibleRecipes()
-                    if (recipes.isEmpty()) {
+                    if (recipesWithFavorites.isEmpty()) {
                         RecipeUiState.Error("No Indian recipes found.")
                     } else {
-                        RecipeUiState.Success(recipes)
+                        RecipeUiState.Success(recipesWithFavorites)
                     }
                 },
                 onFailure = { throwable ->
@@ -153,6 +183,11 @@ class RecipeViewModel(
 
     private fun updateVisibleRecipes() {
         val currentBase = baseRecipes.value
+        val favoriteIds = getStoredFavoriteIds()
+        val syncedBase = currentBase.map { recipe ->
+            recipe.copy(isFavorite = favoriteIds.contains(recipe.idMeal))
+        }
+
         val query = searchQuery.value
         val catIds = categoryMealIds.value
         val ingIds = ingredientMealIds.value
@@ -160,7 +195,7 @@ class RecipeViewModel(
         val sort = sortOrder.value
 
         val filteredAndSorted = filterAndSortRecipes(
-            baseRecipes = currentBase,
+            baseRecipes = syncedBase,
             searchQuery = query,
             selectedCategoryMealIds = catIds,
             selectedIngredientMealIds = ingIds,
@@ -233,19 +268,35 @@ class RecipeViewModel(
     }
 
     fun toggleFavorite(recipeId: String) {
-        val currentState = _uiState.value
-        if (currentState is RecipeUiState.Success) {
-            val updatedRecipes = currentState.recipes.map { recipe ->
-                if (recipe.idMeal == recipeId) {
-                    recipe.copy(isFavorite = !recipe.isFavorite)
-                } else {
-                    recipe
-                }
-            }
-            baseRecipes.value = baseRecipes.value.map { recipe ->
-                if (recipe.idMeal == recipeId) recipe.copy(isFavorite = !recipe.isFavorite) else recipe
-            }
-            _uiState.value = RecipeUiState.Success(updatedRecipes)
+        val ctx = appContext
+        val isCurrentlyFavorite = if (ctx != null) {
+            FavoriteRepository.isFavorite(ctx, recipeId)
+        } else {
+            memoryFavorites.contains(recipeId)
         }
+
+        if (ctx != null) {
+            if (isCurrentlyFavorite) {
+                FavoriteRepository.removeFavorite(ctx, recipeId)
+            } else {
+                FavoriteRepository.addFavorite(ctx, recipeId)
+            }
+        } else {
+            if (isCurrentlyFavorite) {
+                memoryFavorites.remove(recipeId)
+            } else {
+                memoryFavorites.add(recipeId)
+            }
+        }
+
+        val updatedBase = baseRecipes.value.map { recipe ->
+            if (recipe.idMeal == recipeId) {
+                recipe.copy(isFavorite = !isCurrentlyFavorite)
+            } else {
+                recipe
+            }
+        }
+        baseRecipes.value = updatedBase
+        updateVisibleRecipes()
     }
 }
