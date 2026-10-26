@@ -51,7 +51,7 @@ TasteIndia is a native Android application designed to help food enthusiasts and
 
 ## 4. Architecture and Folder Structure
 
-TasteIndia follows the **MVVM (Model-View-ViewModel)** architectural pattern with a clean separation of concerns, repository pattern, and unidiomatic unidirectional data flow (UDF).
+TasteIndia follows the **MVVM (Model-View-ViewModel)** architectural pattern with a clean separation of concerns, repository pattern, and unidirectional data flow (UDF).
 
 ```text
 com.example.tasteindia/
