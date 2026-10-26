@@ -1,5 +1,6 @@
 package com.example.tasteindia.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,13 +31,15 @@ import com.example.tasteindia.model.Recipe
 @Composable
 fun RecipeItem(
     recipe: Recipe,
+    onItemClick: (String) -> Unit,
     onFavoriteClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clickable { onItemClick(recipe.idMeal) },
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -71,7 +74,7 @@ fun RecipeItem(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Accessible favourite control
+            // Accessible favourite control - independent click handler
             val favoriteDesc = if (recipe.isFavorite) "Remove from favorites" else "Add to favorites"
             IconButton(
                 onClick = { onFavoriteClick(recipe.idMeal) },

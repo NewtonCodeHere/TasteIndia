@@ -2,6 +2,7 @@ package com.example.tasteindia.data.repository
 
 import com.example.tasteindia.data.remote.MealApiService
 import com.example.tasteindia.model.Recipe
+import com.example.tasteindia.model.RecipeDetail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -162,6 +163,34 @@ class RecipeRepository(
                 Result.success(verifiedRecipes)
             } catch (e: Exception) {
                 Logger.e(TAG, "API failure during primary fetch or fallback execution", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getRecipeDetails(idMeal: String): Result<RecipeDetail> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Logger.d(TAG, "Fetching recipe details for id=$idMeal via lookup.php?i=$idMeal")
+                val response = apiService.lookupMeal(idMeal)
+                val meals = response.meals
+                if (!meals.isNullOrEmpty()) {
+                    val dto = meals.first()
+                    val detail = RecipeDetail(
+                        idMeal = dto.idMeal ?: idMeal,
+                        strMeal = dto.strMeal ?: "Unknown Recipe",
+                        strMealThumb = dto.strMealThumb ?: "",
+                        strCategory = dto.strCategory ?: "General",
+                        strArea = dto.strArea ?: "Indian",
+                        strInstructions = dto.strInstructions ?: "No instructions provided.",
+                        ingredients = dto.getIngredientsWithMeasurements()
+                    )
+                    Result.success(detail)
+                } else {
+                    Result.failure(Exception("Recipe details not found for ID: $idMeal"))
+                }
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to fetch recipe details for id=$idMeal", e)
                 Result.failure(e)
             }
         }
