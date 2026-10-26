@@ -101,23 +101,7 @@ Rather than a traditional multi-activity architecture or complex navigation grap
 7. **Managing Favourites**: Tapping the heart icon updates SharedPreferences instantly and updates UI state across all screens.
 8. **External Links**: Tapping "View Original Recipe" or "Watch Cooking Video" validates and opens the URL using safe Android `Intent.ACTION_VIEW`.
 
-```mermaid
-graph TD
-    A[App Launch] --> B[RecipeViewModel Init]
-    B --> C[RecipeRepository.getIndianRecipes]
-    C -->|Primary filter.php?a=Indian| D{Results found?}
-    D -->|Yes| E[Map DTOs to Domain Recipes]
-    D -->|No| F[Expanded Fallback: search.php?f=a..z & queries]
-    F --> G[Lookup details via lookup.php?i=id]
-    G --> H[Verify strArea == Indian / India]
-    H --> E
-    E --> I[Load Local Favorites from SharedPreferences]
-    I --> J[Emit RecipeUiState.Success to RecipeScreen]
-    J --> K[User searches / filters / sorts]
-    J --> L[User taps recipe card]
-    L --> M[Fetch details via lookup.php?i=id]
-    M --> N[Display RecipeDetailsScreen]
-```
+
 
 ---
 
