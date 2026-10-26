@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +36,13 @@ fun RecipeScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val selectedId by viewModel.selectedRecipeId.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
+    val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
+    val ingredients by viewModel.ingredients.collectAsStateWithLifecycle()
+    val selectedIngredient by viewModel.selectedIngredient.collectAsStateWithLifecycle()
+    val favoritesOnly by viewModel.favoritesOnly.collectAsStateWithLifecycle()
+    val sortOrder by viewModel.sortOrder.collectAsStateWithLifecycle()
 
     if (selectedId != null) {
         RecipeDetailsScreen(viewModel = viewModel, modifier = modifier)
@@ -51,73 +59,97 @@ fun RecipeScreen(
                 )
             }
         ) { innerPadding ->
-            Box(
+            Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
-                when (val state = uiState) {
-                    is RecipeUiState.Loading -> {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-                    is RecipeUiState.Success -> {
-                        if (state.recipes.isEmpty()) {
+                // Filter Bar (Search, Category, Ingredient, Favorites, Sort, Clear All)
+                RecipeFilterBar(
+                    searchQuery = searchQuery,
+                    onSearchChanged = { viewModel.onSearchQueryChanged(it) },
+                    categories = categories,
+                    selectedCategory = selectedCategory,
+                    onCategorySelected = { viewModel.onCategorySelected(it) },
+                    ingredients = ingredients,
+                    selectedIngredient = selectedIngredient,
+                    onIngredientSelected = { viewModel.onIngredientSelected(it) },
+                    favoritesOnly = favoritesOnly,
+                    onFavoritesToggled = { viewModel.onFavoritesOnlyToggled(it) },
+                    sortOrder = sortOrder,
+                    onSortChanged = { viewModel.onSortOrderChanged(it) },
+                    resultCount = (uiState as? RecipeUiState.Success)?.recipes?.size ?: 0,
+                    onClearAll = { viewModel.clearAllFilters() }
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    when (val state = uiState) {
+                        is RecipeUiState.Loading -> {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text(
-                                    text = "No Indian recipes available at the moment.",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(24.dp)
+                                CircularProgressIndicator(
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                             }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                items(
-                                    items = state.recipes,
-                                    key = { it.idMeal }
-                                ) { recipe ->
-                                    RecipeItem(
-                                        recipe = recipe,
-                                        onItemClick = { id -> viewModel.selectRecipe(id) },
-                                        onFavoriteClick = { id -> viewModel.toggleFavorite(id) }
+                        }
+                        is RecipeUiState.Success -> {
+                            if (state.recipes.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No Indian recipes found matching your filters.",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(24.dp)
                                     )
+                                }
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.fillMaxSize(),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    items(
+                                        items = state.recipes,
+                                        key = { it.idMeal }
+                                    ) { recipe ->
+                                        RecipeItem(
+                                            recipe = recipe,
+                                            onItemClick = { id -> viewModel.selectRecipe(id) },
+                                            onFavoriteClick = { id -> viewModel.toggleFavorite(id) }
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
-                    is RecipeUiState.Error -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(24.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = state.message,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.error,
-                                textAlign = TextAlign.Center
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Button(
-                                onClick = { viewModel.loadRecipes() }
+                        is RecipeUiState.Error -> {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                Text("Retry")
+                                Text(
+                                    text = state.message,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = { viewModel.loadRecipes() }
+                                ) {
+                                    Text("Retry")
+                                }
                             }
                         }
                     }

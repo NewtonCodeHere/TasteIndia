@@ -91,3 +91,27 @@ data class MealDto(
         return list
     }
 }
+
+@JsonClass(generateAdapter = true)
+data class CategoryResponse(
+    @Json(name = "meals")
+    val meals: List<CategoryDto>?
+)
+
+@JsonClass(generateAdapter = true)
+data class CategoryDto(
+    @Json(name = "strCategory")
+    val strCategory: String?
+)
+
+@JsonClass(generateAdapter = true)
+data class IngredientResponse(
+    @Json(name = "meals")
+    val meals: List<IngredientDto>?
+)
+
+@JsonClass(generateAdapter = true)
+data class IngredientDto(
+    @Json(name = "strIngredient")
+    val strIngredient: String?
+)

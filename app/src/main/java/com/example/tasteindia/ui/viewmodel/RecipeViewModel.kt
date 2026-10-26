@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.tasteindia.data.remote.NetworkModule
 import com.example.tasteindia.data.repository.RecipeRepository
+import com.example.tasteindia.model.Recipe
 import com.example.tasteindia.model.RecipeDetail
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,12 +18,36 @@ sealed interface RecipeDetailsUiState {
     data class Error(val message: String) : RecipeDetailsUiState
 }
 
+enum class SortOrder {
+    AZ, ZA
+}
+
 class RecipeViewModel(
     private val repository: RecipeRepository = RecipeRepository(NetworkModule.apiService)
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<RecipeUiState>(RecipeUiState.Loading)
     val uiState: StateFlow<RecipeUiState> = _uiState.asStateFlow()
+
+    // Filter & Sort States
+    val searchQuery = MutableStateFlow("")
+    val selectedCategory = MutableStateFlow<String?>(null)
+    val selectedIngredient = MutableStateFlow<String?>(null)
+    val favoritesOnly = MutableStateFlow(false)
+    val sortOrder = MutableStateFlow(SortOrder.AZ)
+
+    private val _categories = MutableStateFlow<List<String>>(emptyList())
+    val categories: StateFlow<List<String>> = _categories.asStateFlow()
+
+    private val _ingredients = MutableStateFlow<List<String>>(emptyList())
+    val ingredients: StateFlow<List<String>> = _ingredients.asStateFlow()
+
+    // Cached ID sets for category and ingredient filters to avoid N+1 and unnecessary calls
+    private val categoryMealIds = MutableStateFlow<Set<String>?>(null)
+    private val ingredientMealIds = MutableStateFlow<Set<String>?>(null)
+
+    // Base authoritative Indian recipes
+    private val baseRecipes = MutableStateFlow<List<Recipe>>(emptyList())
 
     private val _selectedRecipeId = MutableStateFlow<String?>(null)
     val selectedRecipeId: StateFlow<String?> = _selectedRecipeId.asStateFlow()
@@ -31,7 +56,15 @@ class RecipeViewModel(
     val recipeDetailsState: StateFlow<RecipeDetailsUiState> = _recipeDetailsState.asStateFlow()
 
     init {
+        loadMetadata()
         loadRecipes()
+    }
+
+    private fun loadMetadata() {
+        viewModelScope.launch {
+            repository.getCategories().onSuccess { _categories.value = it }
+            repository.getIngredients().onSuccess { _ingredients.value = it }
+        }
     }
 
     fun loadRecipes() {
@@ -40,8 +73,10 @@ class RecipeViewModel(
             val result = repository.getIndianRecipes()
             _uiState.value = result.fold(
                 onSuccess = { recipes ->
+                    baseRecipes.value = recipes
+                    updateVisibleRecipes()
                     if (recipes.isEmpty()) {
-                        RecipeUiState.Error("No Indian recipes found. (Note: TheMealDB fallback searches configured Indian queries like 'chicken curry', 'biryani', etc.)")
+                        RecipeUiState.Error("No Indian recipes found.")
                     } else {
                         RecipeUiState.Success(recipes)
                     }
@@ -51,6 +86,132 @@ class RecipeViewModel(
                     RecipeUiState.Error(errorMessage)
                 }
             )
+        }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        searchQuery.value = query
+        updateVisibleRecipes()
+    }
+
+    fun onCategorySelected(category: String?) {
+        selectedCategory.value = category
+        if (category == null) {
+            categoryMealIds.value = null
+            updateVisibleRecipes()
+        } else {
+            viewModelScope.launch {
+                repository.getMealIdsByCategory(category).onSuccess { ids ->
+                    categoryMealIds.value = ids
+                    updateVisibleRecipes()
+                }.onFailure {
+                    categoryMealIds.value = emptySet()
+                    updateVisibleRecipes()
+                }
+            }
+        }
+    }
+
+    fun onIngredientSelected(ingredient: String?) {
+        selectedIngredient.value = ingredient
+        if (ingredient == null) {
+            ingredientMealIds.value = null
+            updateVisibleRecipes()
+        } else {
+            viewModelScope.launch {
+                repository.getMealIdsByIngredient(ingredient).onSuccess { ids ->
+                    ingredientMealIds.value = ids
+                    updateVisibleRecipes()
+                }.onFailure {
+                    ingredientMealIds.value = emptySet()
+                    updateVisibleRecipes()
+                }
+            }
+        }
+    }
+
+    fun onFavoritesOnlyToggled(enabled: Boolean) {
+        favoritesOnly.value = enabled
+        updateVisibleRecipes()
+    }
+
+    fun onSortOrderChanged(order: SortOrder) {
+        sortOrder.value = order
+        updateVisibleRecipes()
+    }
+
+    fun clearAllFilters() {
+        searchQuery.value = ""
+        selectedCategory.value = null
+        selectedIngredient.value = null
+        favoritesOnly.value = false
+        sortOrder.value = SortOrder.AZ
+        categoryMealIds.value = null
+        ingredientMealIds.value = null
+        updateVisibleRecipes()
+    }
+
+    private fun updateVisibleRecipes() {
+        val currentBase = baseRecipes.value
+        val query = searchQuery.value
+        val catIds = categoryMealIds.value
+        val ingIds = ingredientMealIds.value
+        val favOnly = favoritesOnly.value
+        val sort = sortOrder.value
+
+        val filteredAndSorted = filterAndSortRecipes(
+            baseRecipes = currentBase,
+            searchQuery = query,
+            selectedCategoryMealIds = catIds,
+            selectedIngredientMealIds = ingIds,
+            favoritesOnly = favOnly,
+            sortOrder = sort
+        )
+
+        _uiState.value = RecipeUiState.Success(filteredAndSorted)
+    }
+
+    // Pure testable function for filtering, intersection, and sorting
+    fun filterAndSortRecipes(
+        baseRecipes: List<Recipe>,
+        searchQuery: String,
+        selectedCategoryMealIds: Set<String>?,
+        selectedIngredientMealIds: Set<String>?,
+        favoritesOnly: Boolean,
+        sortOrder: SortOrder
+    ): List<Recipe> {
+        val baseIds = baseRecipes.map { it.idMeal }.toSet()
+
+        return baseRecipes.filter { recipe ->
+            // 1. Authoritative base Indian set intersection
+            if (!baseIds.contains(recipe.idMeal)) return@filter false
+
+            // 2. Meal-name search
+            if (searchQuery.isNotBlank() && !recipe.strMeal.contains(searchQuery, ignoreCase = true)) {
+                return@filter false
+            }
+
+            // 3. Category filter intersection
+            if (selectedCategoryMealIds != null && !selectedCategoryMealIds.contains(recipe.idMeal)) {
+                return@filter false
+            }
+
+            // 4. Ingredient filter intersection
+            if (selectedIngredientMealIds != null && !selectedIngredientMealIds.contains(recipe.idMeal)) {
+                return@filter false
+            }
+
+            // 5. Favorites-only filter
+            if (favoritesOnly && !recipe.isFavorite) {
+                return@filter false
+            }
+
+            true
+        }.let { filtered ->
+            when (sortOrder) {
+                SortOrder.AZ -> filtered.sortedBy { it.strMeal.lowercase() }
+                SortOrder.ZA -> filtered.sortedByDescending { it.strMeal.lowercase() }
+            }
         }
     }
 
@@ -80,6 +241,9 @@ class RecipeViewModel(
                 } else {
                     recipe
                 }
+            }
+            baseRecipes.value = baseRecipes.value.map { recipe ->
+                if (recipe.idMeal == recipeId) recipe.copy(isFavorite = !recipe.isFavorite) else recipe
             }
             _uiState.value = RecipeUiState.Success(updatedRecipes)
         }

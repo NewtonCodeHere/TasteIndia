@@ -4,6 +4,8 @@ import com.example.tasteindia.data.remote.MealApiService
 import com.example.tasteindia.model.Recipe
 import com.example.tasteindia.model.RecipeDetail
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.withContext
 
 class RecipeRepository(
@@ -11,6 +13,10 @@ class RecipeRepository(
 ) {
 
     private var cachedRecipes: List<Recipe>? = null
+    private var cachedCategories: List<String>? = null
+    private var cachedIngredients: List<String>? = null
+    private val categoryMealIdsCache = mutableMapOf<String, Set<String>>()
+    private val ingredientMealIdsCache = mutableMapOf<String, Set<String>>()
 
     // Single-word search queries that reliably return matches on TheMealDB search.php endpoint
     var fallbackQueries: List<String> = listOf(
@@ -88,81 +94,98 @@ class RecipeRepository(
                         )
                     }.distinctBy { it.idMeal }
                 } else {
-                    // 2. Fallback mechanism: Search candidates -> Lookup details -> Verify strArea == "Indian" or "India"
-                    Logger.d(TAG, "Primary result count is zero/null. Starting fallback search queries: $fallbackQueries")
+                    // 2. Expanded discovery: fallbackQueries + alphabet search (search.php?f=a..z)
+                    Logger.d(TAG, "Primary result count is zero/null. Starting expanded discovery (fallback queries + alphabet f=a..z)...")
                     val candidateIds = mutableSetOf<String>()
+                    var searchFailures = 0
 
+                    // Search via fallback keyword queries
                     for (query in fallbackQueries) {
                         try {
-                            Logger.d(TAG, "Fallback search query: '$query'")
                             val searchResponse = apiService.searchMeals(query)
                             val searchMeals = searchResponse.meals
-                            val mealSummaries = searchMeals?.map { "${it.idMeal}:${it.strMeal}" } ?: emptyList()
-                            Logger.d(TAG, "Fallback search query '$query' returned ${searchMeals?.size ?: 0} meals: $mealSummaries")
                             if (!searchMeals.isNullOrEmpty()) {
                                 for (meal in searchMeals) {
                                     meal.idMeal?.let { candidateIds.add(it) }
                                 }
                             }
                         } catch (e: Exception) {
+                            searchFailures++
                             Logger.e(TAG, "Exception during fallback search query '$query'", e)
                         }
                     }
 
-                    Logger.d(TAG, "Fallback candidates count before filtering: ${candidateIds.size}. Candidate IDs: $candidateIds")
+                    // Search via alphabetical letters 'a' through 'z'
+                    for (char in 'a'..'z') {
+                        try {
+                            val searchResponse = apiService.searchMealsByFirstLetter(char.toString())
+                            val searchMeals = searchResponse.meals
+                            if (!searchMeals.isNullOrEmpty()) {
+                                for (meal in searchMeals) {
+                                    meal.idMeal?.let { candidateIds.add(it) }
+                                }
+                            }
+                        } catch (_: Exception) {
+                            searchFailures++
+                        }
+                    }
+
+                    Logger.d(TAG, "Number of candidates discovered: ${candidateIds.size}. Unique recipe IDs count: ${candidateIds.size}. Search failures: $searchFailures")
 
                     val collectedRecipes = mutableMapOf<String, Recipe>()
+                    var lookupFailures = 0
 
-                    // 3. Fetch full details for each candidate using lookup.php?i={id}
-                    for (idMeal in candidateIds) {
-                        try {
-                            Logger.d(TAG, "Calling details lookup endpoint for id=$idMeal (lookup.php?i=$idMeal)")
-                            val lookupResponse = apiService.lookupMeal(idMeal)
-                            val lookupMeals = lookupResponse.meals
-                            if (!lookupMeals.isNullOrEmpty()) {
-                                val detailsMeal = lookupMeals.first()
-                                val area = detailsMeal.strArea?.trim()
-                                Logger.d(TAG, "Details response for id=$idMeal: name=${detailsMeal.strMeal}, strArea=$area")
-
-                                // Normalize strArea: accept "Indian" or "India" case-insensitively
-                                val isIndian = area != null && (
-                                    area.equals("Indian", ignoreCase = true) ||
-                                    area.equals("India", ignoreCase = true)
-                                )
-
-                                if (isIndian) {
-                                    val id = detailsMeal.idMeal ?: continue
-                                    val name = detailsMeal.strMeal ?: continue
-                                    val thumb = detailsMeal.strMealThumb ?: continue
-
-                                    Logger.d(TAG, "Verified Indian recipe matched: id=$id, name=$name, strArea=$area")
-                                    val recipe = Recipe(
-                                        idMeal = id,
-                                        strMeal = name,
-                                        strMealThumb = thumb,
-                                        isFavorite = false
-                                    )
-                                    collectedRecipes.putIfAbsent(recipe.idMeal, recipe)
-                                } else {
-                                    Logger.d(TAG, "Discarded non-Indian recipe id=$idMeal (name=${detailsMeal.strMeal}, strArea=$area)")
+                    // 3. Fetch full details concurrently in chunks using lookup.php?i={id}
+                    val candidateList = candidateIds.toList()
+                    val chunkSize = 10
+                    for (chunk in candidateList.chunked(chunkSize)) {
+                        val deferredResults = chunk.map { idMeal ->
+                            async(Dispatchers.IO) {
+                                try {
+                                    val lookupResponse = apiService.lookupMeal(idMeal)
+                                    val lookupMeals = lookupResponse.meals
+                                    if (!lookupMeals.isNullOrEmpty()) {
+                                        val detailsMeal = lookupMeals.first()
+                                        val area = detailsMeal.strArea?.trim()
+                                        val isIndian = area != null && (
+                                            area.equals("Indian", ignoreCase = true) ||
+                                            area.equals("India", ignoreCase = true)
+                                        )
+                                        if (isIndian) {
+                                            val id = detailsMeal.idMeal
+                                            val name = detailsMeal.strMeal
+                                            val thumb = detailsMeal.strMealThumb
+                                            if (id != null && name != null && thumb != null) {
+                                                Logger.d(TAG, "Verified Indian recipe matched: id=$id, name=$name, strArea=$area")
+                                                Recipe(idMeal = id, strMeal = name, strMealThumb = thumb, isFavorite = false)
+                                            } else null
+                                        } else {
+                                            null
+                                        }
+                                    } else {
+                                        null
+                                    }
+                                } catch (e: Exception) {
+                                    lookupFailures++
+                                    Logger.e(TAG, "Exception during lookup details for id=$idMeal", e)
+                                    null
                                 }
-                            } else {
-                                Logger.d(TAG, "Lookup response returned empty meals list for id=$idMeal")
                             }
-                        } catch (e: Exception) {
-                            Logger.e(TAG, "Exception during lookup details for id=$idMeal", e)
+                        }
+                        deferredResults.awaitAll().filterNotNull().forEach { recipe ->
+                            collectedRecipes.putIfAbsent(recipe.idMeal, recipe)
                         }
                     }
 
                     val finalRecipes = collectedRecipes.values.toList()
-                    Logger.d(TAG, "Verified Indian recipes count (final list count): ${finalRecipes.size}")
+                    Logger.d(TAG, "Verified Indian recipes count: ${finalRecipes.size}. Lookup failures: $lookupFailures. Final collection size: ${finalRecipes.size}")
                     finalRecipes
                 }
 
                 cachedRecipes = verifiedRecipes
                 Result.success(verifiedRecipes)
             } catch (e: Exception) {
-                Logger.e(TAG, "API failure during primary fetch or fallback execution", e)
+                Logger.e(TAG, "API failure during recipe discovery", e)
                 Result.failure(e)
             }
         }
@@ -191,6 +214,70 @@ class RecipeRepository(
                 }
             } catch (e: Exception) {
                 Logger.e(TAG, "Failed to fetch recipe details for id=$idMeal", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getCategories(): Result<List<String>> {
+        return withContext(Dispatchers.IO) {
+            if (cachedCategories != null) return@withContext Result.success(cachedCategories!!)
+            try {
+                val response = apiService.getCategories("list")
+                val categories = response.meals?.mapNotNull { it.strCategory }?.sorted() ?: emptyList()
+                cachedCategories = categories
+                Result.success(categories)
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to fetch categories", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getIngredients(): Result<List<String>> {
+        return withContext(Dispatchers.IO) {
+            if (cachedIngredients != null) return@withContext Result.success(cachedIngredients!!)
+            try {
+                val response = apiService.getIngredients("list")
+                val ingredients = response.meals?.mapNotNull { it.strIngredient }?.sorted() ?: emptyList()
+                cachedIngredients = ingredients
+                Result.success(ingredients)
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to fetch ingredients", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getMealIdsByCategory(category: String): Result<Set<String>> {
+        return withContext(Dispatchers.IO) {
+            if (categoryMealIdsCache.containsKey(category)) {
+                return@withContext Result.success(categoryMealIdsCache[category]!!)
+            }
+            try {
+                val response = apiService.getMealsByCategory(category)
+                val ids = response.meals?.mapNotNull { it.idMeal }?.toSet() ?: emptySet()
+                categoryMealIdsCache[category] = ids
+                Result.success(ids)
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to fetch meal IDs for category: $category", e)
+                Result.failure(e)
+            }
+        }
+    }
+
+    suspend fun getMealIdsByIngredient(ingredient: String): Result<Set<String>> {
+        return withContext(Dispatchers.IO) {
+            if (ingredientMealIdsCache.containsKey(ingredient)) {
+                return@withContext Result.success(ingredientMealIdsCache[ingredient]!!)
+            }
+            try {
+                val response = apiService.getMealsByIngredient(ingredient)
+                val ids = response.meals?.mapNotNull { it.idMeal }?.toSet() ?: emptySet()
+                ingredientMealIdsCache[ingredient] = ids
+                Result.success(ids)
+            } catch (e: Exception) {
+                Logger.e(TAG, "Failed to fetch meal IDs for ingredient: $ingredient", e)
                 Result.failure(e)
             }
         }
