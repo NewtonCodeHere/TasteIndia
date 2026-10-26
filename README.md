@@ -26,7 +26,6 @@ TasteIndia is a native Android application designed to help food enthusiasts and
 - **Source & YouTube Links**: Access official recipe source websites and YouTube cooking videos directly from the recipe details screen via safe Android intents.
 - **Robust State Handling**: Graceful loading indicators, meaningful empty states when no recipes match filters, and readable error states with a **Retry** action.
 
-*(Limitation Note: Because TheMealDB's primary area filter endpoint (`filter.php?a=Indian`) returns `{"meals": null}` on the public educational tier, the app utilizes an expanded fallback discovery engine combining keyword searches and alphabetical index queries (`search.php?f=a..z`), strictly verified via details lookup (`lookup.php`) for `strArea == "Indian"` / `"India"`).*
 
 ---
 
@@ -232,4 +231,4 @@ The project includes unit tests covering data serialization, ingredient normaliz
 - **Attribution**: Recipe data, categories, ingredients, and images are provided by [TheMealDB API](https://www.themealdb.com/api.php).
 - **Third-Party Libraries**: Jetpack Compose, Material 3, Retrofit, OkHttp, Moshi, Coil, Coroutines, and Lifecycle.
 - **AI Assistance & Tool-Use Disclosure Template**:
-  > *This project was developed with assistance from AI coding tools for architectural guidance, debugging network fallbacks, structuring unit tests, and drafting technical documentation. All implementation logic, architectural decisions, and testing suites were thoroughly reviewed, tested, and verified by the author.*
+  > *AI coding tools were used to assist with architectural guidance, debugging, unit test development, and technical documentation. The generated suggestions were reviewed and adapted during development. The application and unit tests were run to check functionality and identify issues. The author is responsible for the final implementation and the accuracy of this documentation.*
