@@ -173,7 +173,7 @@ To guarantee that non-Indian recipes never enter the results during category or 
 ### Steps to Run
 1. **Clone the Repository**:
    ```bash
-   git clone https://github.com/NanthithaN/TasteIndia.git
+   git clone https://github.com/NewtonCodeHere/TasteIndia.git
    ```
 2. **Open in Android Studio**:
    - Open Android Studio, select **Open**, and choose the cloned `TasteIndia` project folder.
