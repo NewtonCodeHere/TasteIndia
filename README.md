@@ -214,7 +214,7 @@ The project includes unit tests covering data serialization, ingredient normaliz
 
 A demonstration of TasteIndia showcasing the main features of the application, including Indian recipe browsing, search, combined filters, sorting, recipe details, favourites management, and error handling.
 
-**Watch the Demo:** [TasteIndia — Application Demo Video](https://drive.google.com/file/d/1z1TkNnI1bQEjTWvmgZj752kZ2o_8FiMC/view?usp=sharing)
+**Watch the Demo:** [TasteIndia — Application Demo Video](https://drive.google.com/file/d/1z1TkNnI1bQEjTWvmgZj752kZ2o_8FiMC/view?usp=drive_link)
 
 ---
 ## 15. Attribution and Responsible AI Use
